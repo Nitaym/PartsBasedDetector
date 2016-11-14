@@ -72,8 +72,8 @@ if (WITH_OPENMP)
 endif()
 
 # add vectorization support
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")
-set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -msse4.1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -march=native")
 
 # use highest level of optimization in Release mode
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
@@ -111,11 +111,11 @@ include_directories(include)
 add_subdirectory(src)
 
 # add documentation
-if(BUILD_DOC)
-    find_package(Doxygen)
-    configure_file(${PROJECT_SOURCE_DIR}/doc/Doxyfile.in ${PROJECT_SOURCE_DIR}/doc/Doxyfile @ONLY)
-    add_custom_target(${PROJECT_NAME}_doc ALL ${DOXYGEN_EXECUTABLE} ${PROJECT_SOURCE_DIR}/doc/Doxyfile)
-endif()
+#if(BUILD_DOC)
+#    find_package(Doxygen)
+#    configure_file(${PROJECT_SOURCE_DIR}/doc/Doxyfile.in ${PROJECT_SOURCE_DIR}/doc/Doxyfile @ONLY)
+#    add_custom_target(${PROJECT_NAME}_doc ALL ${DOXYGEN_EXECUTABLE} ${PROJECT_SOURCE_DIR}/doc/Doxyfile)
+#endif()
 
 # add tests
 if(WITH_ECTO AND CATKIN_ENABLE_TESTING)
