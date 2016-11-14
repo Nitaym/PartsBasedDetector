@@ -41,7 +41,10 @@
 //M*/
 
 #include "filterengine.hpp"
-#include <opencv2/imgproc/hal/hal.hpp>
+
+#if CV_MAJOR_VERSION == 2
+    #include <opencv2/imgproc/hal/hal.hpp>
+#endif
 
 #define  CV_MALLOC_ALIGN    16
 
@@ -460,7 +463,13 @@ void FilterEngine::apply(const Mat& src, Mat& dst, const Size & wsz, const Point
 
     CV_Assert( src.type() == srcType && dst.type() == dstType );
 
+    // handle the "whole image" case
+#if CV_MAJOR_VERSION == 2
     int y = start(src, wsz, ofs);
+#else
+    int y = ( wsz == Size(-1,-1) ) ? start(src, Size(src.cols, src.rows), ofs) : start(src, wsz, ofs);
+#endif
+
     proceed(src.ptr() + y*src.step,
             (int)src.step,
             endY - startY,
