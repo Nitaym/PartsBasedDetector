@@ -37,6 +37,7 @@
  */
 
 #include <stdio.h>
+#include <omp.h>
 #include <boost/filesystem.hpp>
 #include "PartsBasedDetector.hpp"
 #include "Candidate.hpp"
@@ -54,73 +55,95 @@ using namespace std;
 
 int main(int argc, char** argv) {
 
-	// check arguments
-	if (argc != 3 && argc != 4) {
-		printf("Usage: PartsBasedDetector model_file image_file [depth_file]\n");
-		exit(-1);
-	}
+    // check arguments
+    if (argc != 3 && argc != 4) {
+        printf("Usage: PartsBasedDetector model_file image_file [depth_file]\n");
+        exit(-1);
+    }
 
-	// determine the type of model to read
-	boost::scoped_ptr<Model> model;
-	string ext = boost::filesystem::path(argv[1]).extension().string();
-	if (ext.compare(".xml") == 0 || ext.compare(".yaml") == 0) {
-		model.reset(new FileStorageModel);
-	}
-#ifdef WITH_MATLABIO
-	else if (ext.compare(".mat") == 0) {
-		model.reset(new MatlabIOModel);
-	}
-#endif
-	else {
-		printf("Unsupported model format: %s\n", ext.c_str());
-		exit(-2);
-	}
-	bool ok = model->deserialize(argv[1]);
-	if (!ok) {
-		printf("Error deserializing file\n");
-		exit(-3);
-	}
+    // determine the type of model to read
+    string ext = boost::filesystem::path(argv[1]).extension().string();
 
-	// create the PartsBasedDetector and distribute the model parameters
-	PartsBasedDetector<float> pbd;
-	pbd.distributeModel(*model);
+    // load the image from file
+    Mat_<float> depth;
+    Mat im = imread(argv[2]);
+    if (im.empty()) {
+        printf("Image not found or invalid image format\n");
+        exit(-4);
+    }
+    if (argc == 4) {
+        depth = imread(argv[3], IMREAD_ANYDEPTH);
+        // convert the depth image from mm to m
+        depth = depth / 1000.0f;
+    }
 
-	// load the image from file
-	Mat_<float> depth;
-	Mat im = imread(argv[2]);
-        if (im.empty()) {
-            printf("Image not found or invalid image format\n");
-            exit(-4);
+    vector<Candidate> final_candidates;
+    string model_name;
+
+    static const int NUM_TESTS_PROCESSORS = 4;
+    static const int NUM_TESTS_PER_THREAD = 30;
+
+    PartsBasedDetector<float> pbds[NUM_TESTS_PROCESSORS];
+    for (int n = 0; n < NUM_TESTS_PROCESSORS; n++) {
+        boost::scoped_ptr<Model> model;
+        if (ext.compare(".xml") == 0 || ext.compare(".yaml") == 0) {
+            model.reset(new FileStorageModel);
         }
-	if (argc == 4) {
-		depth = imread(argv[3], IMREAD_ANYDEPTH);
-		// convert the depth image from mm to m
-		depth = depth / 1000.0f;
-	}
+#ifdef WITH_MATLABIO
+            else if (ext.compare(".mat") == 0) {
+            model.reset(new MatlabIOModel);
+        }
+#endif
+        else {
+            printf("Unsupported model format: %s\n", ext.c_str());
+            exit(-2);
+        }
+        bool ok = model->deserialize(argv[1]);
+        if (!ok) {
+            printf("Error deserializing file\n");
+            exit(-3);
+        }
+        pbds[n].distributeModel(*model);
+        if (n==0)
+            model_name = model->name();
+    }
 
-	// detect potential candidates in the image
-	vector<Candidate> candidates;
 
-	#define BENCHMARK_REPEAT_COUNT 100
-	clock_t begin = clock();
+    omp_set_nested(1);
+    omp_set_dynamic(0);
+    omp_set_num_threads(NUM_TESTS_PROCESSORS);
 
-	for (int i = 0; i < BENCHMARK_REPEAT_COUNT; i++)
-		pbd.detect(im, depth, candidates);
+    //clock_t tic = ::clock();
+    std::time_t tic = std::time(NULL);
+    #pragma omp parallel for
+    for (int n = 0; n < NUM_TESTS_PROCESSORS; n++) {
+        vector<Candidate> candidates;
 
-	clock_t end = clock();
-	double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;	
+        for (int k = 0; k < NUM_TESTS_PER_THREAD; k++) {
+            candidates.clear();
+            // detect potential candidates in the image
+            pbds[n].detect(im, depth, candidates);
+        }
 
-	printf("Number of candidates: %ld\n", candidates.size());
-	printf("Ran %d times. Took %3.2fms, meaning %3.2fms per run\n\n", BENCHMARK_REPEAT_COUNT, elapsed_secs * 1000.0, elapsed_secs * 1000.0 / BENCHMARK_REPEAT_COUNT);
+        printf("Number of candidates: %ld\n", candidates.size());
+
+        if (n == 0)
+            final_candidates = candidates;
+    }
+    std::time_t toc = std::time(NULL);
+
+
+    printf("Total took %.3lf sec. Average detection took %.3lf sec\n",
+           std::difftime(toc, tic), std::difftime(toc, tic)/(NUM_TESTS_PROCESSORS*NUM_TESTS_PER_THREAD));
 
 	// display the best candidates
-	Visualize visualize(model->name());
+	Visualize visualize(model_name);
 	SearchSpacePruning<float> ssp;
         Mat canvas;
-	if (candidates.size() > 0) {
-	    Candidate::sort(candidates);
+	if (final_candidates.size() > 0) {
+	    Candidate::sort(final_candidates);
 	    //Candidate::nonMaximaSuppression(im, candidates, 0.2);
-	    visualize.candidates(im, candidates, canvas, true);
+	    visualize.candidates(im, final_candidates, canvas, true);
         //visualize.image(canvas);
         cvtColor(canvas, canvas, cv::COLOR_RGB2BGR);
         imwrite("detected.jpg", canvas);
