@@ -100,8 +100,18 @@ int main(int argc, char** argv) {
 
 	// detect potential candidates in the image
 	vector<Candidate> candidates;
-	pbd.detect(im, depth, candidates);
+
+	#define BENCHMARK_REPEAT_COUNT 100
+	clock_t begin = clock();
+
+	for (int i = 0; i < BENCHMARK_REPEAT_COUNT; i++)
+		pbd.detect(im, depth, candidates);
+
+	clock_t end = clock();
+	double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;	
+
 	printf("Number of candidates: %ld\n", candidates.size());
+	printf("Ran %d times. Took %3.2fms, meaning %3.2fms per run\n\n", BENCHMARK_REPEAT_COUNT, elapsed_secs * 1000.0, elapsed_secs * 1000.0 / BENCHMARK_REPEAT_COUNT);
 
 	// display the best candidates
 	Visualize visualize(model->name());
@@ -111,8 +121,10 @@ int main(int argc, char** argv) {
 	    Candidate::sort(candidates);
 	    //Candidate::nonMaximaSuppression(im, candidates, 0.2);
 	    visualize.candidates(im, candidates, canvas, true);
-            visualize.image(canvas);
-	    waitKey();
+        //visualize.image(canvas);
+        cvtColor(canvas, canvas, cv::COLOR_RGB2BGR);
+        imwrite("detected.jpg", canvas);
+	    // waitKey();
 	}
 	return 0;
 }
